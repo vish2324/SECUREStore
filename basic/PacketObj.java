@@ -1,3 +1,7 @@
+package basic;
+
+import com.sun.xml.internal.bind.v2.runtime.reflect.Lister;
+
 import java.io.Serializable;
 
 /**
@@ -5,13 +9,25 @@ import java.io.Serializable;
  */
 
 public class PacketObj implements Serializable{
-    int type;
+    Packet type;
     int length;
     String mesage;
 
-    public PacketObj(int type, int length, String mesage) {
+    public PacketObj(Packet type, int length, String mesage) {
         this.type = type;
         this.length = length;
         this.mesage = mesage;
+    }
+    
+    public Packet getType() {
+        return type;
+    }
+    
+    public int getLength() {
+        return length;
+    }
+    
+    public String getMesage() {
+        return mesage;
     }
 }
