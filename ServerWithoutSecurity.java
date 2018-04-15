@@ -1,11 +1,20 @@
+import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
 import java.security.Signature;
+import java.security.spec.KeySpec;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.util.Arrays;
 
 import javax.crypto.Cipher;
 import javax.crypto.NoSuchPaddingException;
@@ -20,6 +29,7 @@ import static basic.Packet.HELLO_SERVER;
 public class ServerWithoutSecurity {
 	
 	public static int port = 4321;
+	public static Signature signature;
 
 	public static void main(String[] args) {
     	if (args.length > 0) port = Integer.parseInt(args[0]);
@@ -34,7 +44,7 @@ public class ServerWithoutSecurity {
 			System.out.println("Server started on port: "+ port);
 			while(true){
 				System.out.println("Listening on main thread.....");
-				handler = new Handler(welcomeSocket.accept());
+				handler = new Handler(welcomeSocket.accept(),signature );
 				handler.start();
 			}
 			
@@ -42,25 +52,45 @@ public class ServerWithoutSecurity {
 
 	}
 	
-	private static void init() {
+	private static void init()  {
 		try {
-			Cipher cipher = Cipher.getInstance("RSA");
-			//cipher.init(Cipher.ENCRYPT_MODE, );
+			String keyPath = "privateServer.der";
+			File privKeyFile = new File(keyPath);
+			BufferedInputStream bis;
+			try {
+				bis = new BufferedInputStream(new FileInputStream(privKeyFile));
+			} catch(FileNotFoundException e) {
+				throw new Exception("Could not locate keyfile at '" + keyPath + "'", e);
+			}
+			byte[] privKeyBytes = new byte[(int)privKeyFile.length()];
+			bis.read(privKeyBytes);
+			bis.close();
+			System.out.println(Arrays.toString(privKeyBytes));
+			KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+			KeySpec ks = new PKCS8EncodedKeySpec(privKeyBytes);
+			PrivateKey privateKey = keyFactory.generatePrivate(ks);
+			signature =Signature.getInstance("SHA1withRSA");
+			signature.initSign(privateKey);
+			System.out.println("Completed initalization.....");
 		} catch (NoSuchAlgorithmException e) {
 			e.printStackTrace();
 		} catch (NoSuchPaddingException e) {
+			e.printStackTrace();
+		} catch (Exception e)  {
+			System.out.println("Exception caught");
 			e.printStackTrace();
 		}
 	}
 
 	private static class Handler extends Thread {
 		Socket socket;
+		Signature signature;
 		
 		PacketObj packet;
 		Object obj;
 		Packet type;
 		int length;
-		String message;
+		byte[] message;
 
 		ObjectOutputStream toClient = null;
 		ObjectInputStream fromClient = null;
@@ -68,8 +98,9 @@ public class ServerWithoutSecurity {
 		FileOutputStream fileOutputStream = null;
 		BufferedOutputStream bufferedFileOutputStream = null;
 
-		public Handler(Socket socket) {
+		public Handler(Socket socket, Signature signature) {
 			this.socket = socket;
+			this.signature = signature;
 		}
 
 		public void run() {
@@ -85,13 +116,15 @@ public class ServerWithoutSecurity {
 					}
 					type = packet.getType();
 					length = packet.getLength();
-					message = packet.getMesage();
+					message = packet.getMessage();
 					
 					switch(type) {
 						case HELLO_SERVER:
-							if(message.equals(Strings.HELLO_MESSAGE)) {
+							if(Arrays.equals(message, Strings.HELLO_MESSAGE.getBytes("UTF-8"))) {
 								System.out.println("Sending welcome message.......");
-								//toClient.writeObject(new PacketObj(Packet.WELCOME,));
+								signature.update(Strings.WELCOME_MESSAGE.getBytes("UTF-8"));
+								byte[] welcome_message = signature.sign();
+								toClient.writeObject(new PacketObj(Packet.WELCOME,welcome_message.length,welcome_message));
 							}
 							
 						
