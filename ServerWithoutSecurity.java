@@ -4,19 +4,26 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.security.NoSuchAlgorithmException;
+import java.security.Signature;
+
+import javax.crypto.Cipher;
+import javax.crypto.NoSuchPaddingException;
 
 import basic.PacketObj;
 import basic.Packet;
+import basic.Strings;
 
 import static basic.Packet.HELLO_SERVER;
 
 
 public class ServerWithoutSecurity {
+	
+	public static int port = 4321;
 
 	public static void main(String[] args) {
-
-    	int port = 4321;
     	if (args.length > 0) port = Integer.parseInt(args[0]);
+    	init();
 
 		ServerSocket welcomeSocket = null;
 		Handler handler;
@@ -33,6 +40,17 @@ public class ServerWithoutSecurity {
 			
 		} catch (Exception e) {e.printStackTrace();}
 
+	}
+	
+	private static void init() {
+		try {
+			Cipher cipher = Cipher.getInstance("RSA");
+			//cipher.init(Cipher.ENCRYPT_MODE, );
+		} catch (NoSuchAlgorithmException e) {
+			e.printStackTrace();
+		} catch (NoSuchPaddingException e) {
+			e.printStackTrace();
+		}
 	}
 
 	private static class Handler extends Thread {
@@ -71,6 +89,10 @@ public class ServerWithoutSecurity {
 					
 					switch(type) {
 						case HELLO_SERVER:
+							if(message.equals(Strings.HELLO_MESSAGE)) {
+								System.out.println("Sending welcome message.......");
+								//toClient.writeObject(new PacketObj(Packet.WELCOME,));
+							}
 							
 						
 					}
