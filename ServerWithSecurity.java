@@ -26,7 +26,7 @@ import basic.Strings;
 import static basic.Packet.HELLO_SERVER;
 
 
-public class ServerWithoutSecurity {
+public class ServerWithSecurity {
 	
 	public static int port = 4321;
 	public static Signature signature;

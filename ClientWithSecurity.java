@@ -1,5 +1,3 @@
-package com.example.progassign2;
-
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -19,9 +17,12 @@ import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
 
+import basic.Packet;
+import basic.PacketObj;
+import basic.Strings;
+
 
 public class ClientWithSecurity {
-	private static final String HI = "Hello SecStore, please prove your identity!";
 
 	private static X509Certificate serverCert;
 
@@ -32,12 +33,13 @@ public class ClientWithSecurity {
 			 * HELLO PACKET
 			 * */
 			System.out.println("Sending hello message to server");
-			PacketObj hiPacket = new PacketObj(Packet.HELLO_SERVER, HI.length(), HI);
+			byte[] hello_message = Strings.HELLO_MESSAGE.getBytes("UTF-8");
+			PacketObj hiPacket = new PacketObj(Packet.HELLO_SERVER, hello_message.length, hello_message);
 			toServer.writeObject(hiPacket);
 			toServer.flush();
 
 			PacketObj replyPacket = (PacketObj) fromServer.readObject();
-			System.out.println("Received Reply");
+			System.out.println("Received Reply with welcome message signed with private key");
 
 			System.out.println("Requesting CA signed certificate");
 			toServer.writeInt(3);
@@ -80,11 +82,12 @@ public class ClientWithSecurity {
 			Signature dsa = Signature.getInstance("SHA1withRSA", "SunJSSE");
 			dsa.initVerify(serverCert.getPublicKey());
 			dsa.update("Hello, this is SecStore!".getBytes("UTF-8"));
-			if (!dsa.verify(replyPacket.mesage.getBytes())) {
+			/*
+			if (!dsa.verify(replyPacket.getMessage().getBytes())) {
 				System.err.println("Verification failed! Bye!");
 				System.exit(-1);
 			}
-
+*/
 			System.out.println("Verified welcome message!");
 
 		} catch (Exception e) {

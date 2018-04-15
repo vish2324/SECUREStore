@@ -11,12 +11,12 @@ import java.io.Serializable;
 public class PacketObj implements Serializable{
     Packet type;
     int length;
-    String mesage;
+    byte[] message;
 
-    public PacketObj(Packet type, int length, String mesage) {
+    public PacketObj(Packet type, int length, byte[] message) {
         this.type = type;
         this.length = length;
-        this.mesage = mesage;
+        this.message = message;
     }
     
     public Packet getType() {
@@ -27,7 +27,7 @@ public class PacketObj implements Serializable{
         return length;
     }
     
-    public String getMesage() {
-        return mesage;
+    public byte[] getMessage() {
+        return message;
     }
 }
