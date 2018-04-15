@@ -1,5 +1,6 @@
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -28,7 +29,7 @@ import static basic.Packet.HELLO_SERVER;
 
 public class ServerWithSecurity {
 	
-	public static int port = 4321;
+	public static int port = 4000;
 	public static Signature signature;
 
 	public static void main(String[] args) {
@@ -37,17 +38,19 @@ public class ServerWithSecurity {
 
 		ServerSocket welcomeSocket = null;
 		Handler handler;
-
+		int client_no = 0;
 
 		try {
 			welcomeSocket = new ServerSocket(port);
 			System.out.println("Server started on port: "+ port);
 			while(true){
 				System.out.println("Listening on main thread.....");
-				handler = new Handler(welcomeSocket.accept(),signature );
+				handler = new Handler(welcomeSocket.accept(),signature , client_no);
 				handler.start();
 			}
 			
+		} catch (EOFException e) {
+			System.out.println("Connection to client has ended on port " + port);
 		} catch (Exception e) {e.printStackTrace();}
 
 	}
@@ -65,7 +68,7 @@ public class ServerWithSecurity {
 			byte[] privKeyBytes = new byte[(int)privKeyFile.length()];
 			bis.read(privKeyBytes);
 			bis.close();
-			System.out.println(Arrays.toString(privKeyBytes));
+			System.out.println("Private key " + Arrays.toString(privKeyBytes));
 			KeyFactory keyFactory = KeyFactory.getInstance("RSA");
 			KeySpec ks = new PKCS8EncodedKeySpec(privKeyBytes);
 			PrivateKey privateKey = keyFactory.generatePrivate(ks);
@@ -85,6 +88,7 @@ public class ServerWithSecurity {
 	private static class Handler extends Thread {
 		Socket socket;
 		Signature signature;
+		int client;
 		
 		PacketObj packet;
 		Object obj;
@@ -98,8 +102,9 @@ public class ServerWithSecurity {
 		FileOutputStream fileOutputStream = null;
 		BufferedOutputStream bufferedFileOutputStream = null;
 
-		public Handler(Socket socket, Signature signature) {
+		public Handler(Socket socket, Signature signature, int client) {
 			this.socket = socket;
+			this.client = client;
 			this.signature = signature;
 		}
 
@@ -120,14 +125,26 @@ public class ServerWithSecurity {
 					
 					switch(type) {
 						case HELLO_SERVER:
+							System.out.println("\nREceived hello message from client");
 							if(Arrays.equals(message, Strings.HELLO_MESSAGE.getBytes("UTF-8"))) {
-								System.out.println("Sending welcome message.......");
+								System.out.println("Sending welcome message signed with private key.......");
 								signature.update(Strings.WELCOME_MESSAGE.getBytes("UTF-8"));
 								byte[] welcome_message = signature.sign();
 								toClient.writeObject(new PacketObj(Packet.WELCOME,welcome_message.length,welcome_message));
 							}
-							
+							break;
 						
+						case REQ_CA_CERT:
+							System.out.println("\nReceived request from client for certificate signed by CA");
+							System.out.println("Responding appropriately.....");
+							File cert = new File("server.crt");
+							FileInputStream fileInputStream = new FileInputStream(cert);
+							BufferedInputStream bis1 = new BufferedInputStream(fileInputStream);
+							byte [] fromFileBuffer = new byte[(int) cert.length()];
+							bis1.read(fromFileBuffer);
+							toClient.writeObject(new PacketObj(Packet.SERVER_CERT, fromFileBuffer.length, fromFileBuffer));
+							System.out.println("Certificate has been sent!!");
+							break;
 					}
 					
 					/*
@@ -169,7 +186,9 @@ public class ServerWithSecurity {
 					}
 					*/
 				}
-			} catch (Exception e){e.printStackTrace();}
+			} catch (EOFException e) {
+				System.out.println("unexpected EOF character. Session has ended for client "+client);
+			}catch (Exception e){e.printStackTrace();}
 		}
 	}
 

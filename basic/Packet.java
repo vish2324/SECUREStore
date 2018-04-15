@@ -6,7 +6,9 @@ package basic;
 
 public enum Packet {
     HELLO_SERVER(0),
-    WELCOME(1);
+    WELCOME(1),
+    REQ_CA_CERT(2),
+    SERVER_CERT(3);
 
     public int value;
 

@@ -1,3 +1,5 @@
+import com.sun.xml.internal.bind.v2.runtime.reflect.Lister;
+
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -38,12 +40,13 @@ public class ClientWithSecurity {
 			toServer.writeObject(hiPacket);
 			toServer.flush();
 
-			PacketObj replyPacket = (PacketObj) fromServer.readObject();
+			PacketObj WelcomePacket = (PacketObj) fromServer.readObject();
 			System.out.println("Received Reply with welcome message signed with private key");
 
-			System.out.println("Requesting CA signed certificate");
-			toServer.writeInt(3);
-			toServer.flush();
+			System.out.println("Requesting CA signed certificate of Secstore");
+			byte[] carequest = Strings.CA_REQUEST.getBytes("UTF-8");
+			PacketObj RequestCA = new PacketObj(Packet.REQ_CA_CERT, carequest.length, carequest);
+			/*
 
 			int certLength = fromServer.readInt();
 			byte[] cert = new byte[certLength];
@@ -81,7 +84,7 @@ public class ClientWithSecurity {
 
 			Signature dsa = Signature.getInstance("SHA1withRSA", "SunJSSE");
 			dsa.initVerify(serverCert.getPublicKey());
-			dsa.update("Hello, this is SecStore!".getBytes("UTF-8"));
+			dsa.update("Hello, this is SecStore!".getBytes("UTF-8"));*/
 			/*
 			if (!dsa.verify(replyPacket.getMessage().getBytes())) {
 				System.err.println("Verification failed! Bye!");
@@ -94,7 +97,7 @@ public class ClientWithSecurity {
 			e.printStackTrace();
 		}
 	}
-
+/*
 	private static void sendCP1 (String filename, ObjectOutputStream toServer){
 		try {
 			FileInputStream fileInputStream;
@@ -170,7 +173,7 @@ public class ClientWithSecurity {
 		}
 		return null;
 	}
-
+*/
 	public static void main(String[] args) {
 		String filename = "rr.txt";
 		if (args.length > 0) filename = args[0];
@@ -178,7 +181,7 @@ public class ClientWithSecurity {
 		String serverAddress = "localhost";
 		if (args.length > 1) filename = args[1];
 
-		int port = 4321;
+		int port = 4000;
 		if (args.length > 2) port = Integer.parseInt(args[2]);
 
 		Socket clientSocket;
@@ -200,9 +203,10 @@ public class ClientWithSecurity {
 
 			System.out.println("Sending file...");
 
-			sendCP1(filename, toServer);
+			//sendCP1(filename, toServer);
 
 			System.out.println("Closing connection...");
+			clientSocket.close();
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
