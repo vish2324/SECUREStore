@@ -131,6 +131,7 @@ public class ServerWithSecurity {
 								signature.update(Strings.WELCOME_MESSAGE.getBytes("UTF-8"));
 								byte[] welcome_message = signature.sign();
 								toClient.writeObject(new PacketObj(Packet.WELCOME,welcome_message.length,welcome_message));
+								toClient.flush();
 							}
 							break;
 						
@@ -143,6 +144,7 @@ public class ServerWithSecurity {
 							byte [] fromFileBuffer = new byte[(int) cert.length()];
 							bis1.read(fromFileBuffer);
 							toClient.writeObject(new PacketObj(Packet.SERVER_CERT, fromFileBuffer.length, fromFileBuffer));
+							toClient.flush();
 							System.out.println("Certificate has been sent!!");
 							break;
 					}
