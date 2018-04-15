@@ -1,21 +1,32 @@
+package com.example.progassign2;
+
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 
+import javax.crypto.BadPaddingException;
+import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
+
+
 public class ClientWithSecurity {
 	private static final String HI = "Hello SecStore, please prove your identity!";
 
+	private static X509Certificate serverCert;
+
 	private static void AP(ObjectOutputStream toServer, ObjectInputStream fromServer) {
 		try {
-			System.out.println("Establishing connection to server...");
-
 			/*
 			 * Serialized packet obj
 			 * HELLO PACKET
@@ -34,6 +45,7 @@ public class ClientWithSecurity {
 
 			int certLength = fromServer.readInt();
 			byte[] cert = new byte[certLength];
+			fromServer.read(cert);
 
 			int read = fromServer.readInt();
 			int offset = 0;
@@ -52,12 +64,15 @@ public class ClientWithSecurity {
 			}
 
 			CertificateFactory cf = CertificateFactory.getInstance("X.509");
-			X509Certificate serverCert = (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(cert));
+			serverCert = (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(cert));
 
 			System.out.println("Recieved server certificate");
 			System.out.println("Verifying...");
 			X509Certificate CAcert = (X509Certificate) cf.generateCertificate(new FileInputStream("CA.crt"));
 			PublicKey key = CAcert.getPublicKey();
+
+			serverCert.checkValidity();
+			serverCert.verify(key);
 
 			System.out.println("Verified server certificate!");
 			System.out.println("Verifying welcome message...");
@@ -77,37 +92,12 @@ public class ClientWithSecurity {
 		}
 	}
 
-	public static void main(String[] args) {
-		String filename = "rr.txt";
-		if (args.length > 0) filename = args[0];
-
-		String serverAddress = "localhost";
-		if (args.length > 1) filename = args[1];
-
-		int port = 4321;
-		if (args.length > 2) port = Integer.parseInt(args[2]);
-
-		int numBytes = 0;
-
-		Socket clientSocket = null;
-
-		ObjectOutputStream toServer = null;
-		ObjectInputStream fromServer = null;
-
-		FileInputStream fileInputStream = null;
-		BufferedInputStream bufferedFileInputStream = null;
-
-		long timeStarted = System.nanoTime();
-
+	private static void sendCP1 (String filename, ObjectOutputStream toServer){
 		try {
-			// Connect to server and get the input and output streams
-			clientSocket = new Socket(serverAddress, port);
-			toServer = new ObjectOutputStream(clientSocket.getOutputStream());
-			fromServer = new ObjectInputStream(clientSocket.getInputStream());
+			FileInputStream fileInputStream;
+			BufferedInputStream bufferedFileInputStream;
 
-			AP(toServer, fromServer);
-
-			System.out.println("Sending file...");
+			int numBytes;
 
 			// Send the filename
 			toServer.writeInt(0);
@@ -116,6 +106,16 @@ public class ClientWithSecurity {
 			toServer.flush();
 
 			// Open the file
+			File file = new File(filename);
+			if (!file.exists()) {
+				System.err.println("File has problem");
+				System.exit(-1);
+			}
+			if (file.length() == 0) {
+				System.err.println("Empty file");
+				System.exit(-1);
+			}
+
 			fileInputStream = new FileInputStream(filename);
 			bufferedFileInputStream = new BufferedInputStream(fileInputStream);
 			byte[] fromFileBuffer = new byte[117];
@@ -126,16 +126,79 @@ public class ClientWithSecurity {
 				numBytes = bufferedFileInputStream.read(fromFileBuffer);
 				fileEnded = numBytes < 117;
 
-				toServer.writeInt(1);
-				toServer.writeInt(numBytes);
-				toServer.write(fromFileBuffer, 0, numBytes);
-				toServer.flush();
-				count++;
+				byte[] encryptedBytes = encrypt(fromFileBuffer);
+				if (encryptedBytes != null) {
+					toServer.writeInt(1);
+					toServer.writeInt(numBytes);
+					toServer.writeInt(encryptedBytes.length);
+					toServer.write(encryptedBytes, 0, encryptedBytes.length);
+					toServer.flush();
+					count++;
+				}
 			}
 
 			System.out.println("Sent " + count + " blocks");
 			bufferedFileInputStream.close();
 			fileInputStream.close();
+		}
+		catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	private static byte[] encrypt(byte[] plaintext) {
+		try {
+			Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+			cipher.init(Cipher.ENCRYPT_MODE, serverCert.getPublicKey());
+			return cipher.doFinal(plaintext);
+		} catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+
+	public byte[] decrypt(byte[] ciphertext) {
+		try {
+			Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+			cipher.init(Cipher.DECRYPT_MODE, serverCert.getPublicKey());
+			return cipher.doFinal(ciphertext);
+		} catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+
+	public static void main(String[] args) {
+		String filename = "rr.txt";
+		if (args.length > 0) filename = args[0];
+
+		String serverAddress = "localhost";
+		if (args.length > 1) filename = args[1];
+
+		int port = 4321;
+		if (args.length > 2) port = Integer.parseInt(args[2]);
+
+		Socket clientSocket;
+
+		ObjectOutputStream toServer;
+		ObjectInputStream fromServer;
+
+		long timeStarted = System.nanoTime();
+
+		try {
+			// Connect to server and get the input and output streams
+			clientSocket = new Socket(serverAddress, port);
+			toServer = new ObjectOutputStream(clientSocket.getOutputStream());
+			fromServer = new ObjectInputStream(clientSocket.getInputStream());
+
+			System.out.println("Establishing connection to server...");
+
+			AP(toServer, fromServer);
+
+			System.out.println("Sending file...");
+
+			sendCP1(filename, toServer);
+
 			System.out.println("Closing connection...");
 		} catch (Exception e) {
 			e.printStackTrace();

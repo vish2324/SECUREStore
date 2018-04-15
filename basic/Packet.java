@@ -5,7 +5,8 @@ package basic;
  */
 
 public enum Packet {
-    HELLO_SERVER(0);
+    HELLO_SERVER(0),
+    WELCOME(1);
 
     public int value;
 
