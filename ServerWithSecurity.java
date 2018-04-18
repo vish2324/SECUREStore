@@ -1,10 +1,10 @@
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
@@ -13,6 +13,7 @@ import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.Signature;
+import java.security.SignatureException;
 import java.security.spec.KeySpec;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Arrays;
@@ -20,21 +21,17 @@ import java.util.Arrays;
 import javax.crypto.Cipher;
 import javax.crypto.NoSuchPaddingException;
 
-import basic.PacketObj;
-import basic.Packet;
-import basic.Strings;
-
-import static basic.Packet.HELLO_SERVER;
-
-
 public class ServerWithSecurity {
-	
-	public static int port = 4000;
-	public static Signature signature;
+
+	static PrivateKey privateKey;
+
+	private static int port = 4600;
+
+	private static Signature signature;
 
 	public static void main(String[] args) {
-    	if (args.length > 0) port = Integer.parseInt(args[0]);
-    	init();
+		if (args.length > 0) port = Integer.parseInt(args[0]);
+		init();
 
 		ServerSocket welcomeSocket = null;
 		Handler handler;
@@ -42,42 +39,64 @@ public class ServerWithSecurity {
 
 		try {
 			welcomeSocket = new ServerSocket(port);
-			System.out.println("Server started on port: "+ port);
-			while(true){
-				System.out.println("Listening on main thread.....");
-				handler = new Handler(welcomeSocket.accept(),signature , client_no);
-				handler.start();
-			}
-			
-		} catch (EOFException e) {
-			System.out.println("Connection to client has ended on port " + port);
-		} catch (Exception e) {e.printStackTrace();}
+			System.out.println("Server started on port: " + port);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 
+		System.out.println("Listening on main thread.....");
+		while(true) {
+			try {
+
+				if (welcomeSocket != null) {
+					final Socket welsoc = welcomeSocket.accept();
+
+					handler = new Handler(welsoc, signature, client_no);
+					handler.start();
+					handler.join();
+					break;
+				}
+
+			} catch (NullPointerException | IOException | InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
 	}
-	
+
 	private static void init()  {
 		try {
-			String keyPath = "privateServer.der";
+			String keyPath = "pricateServer.der";
 			File privKeyFile = new File(keyPath);
+
 			BufferedInputStream bis;
+
 			try {
 				bis = new BufferedInputStream(new FileInputStream(privKeyFile));
 			} catch(FileNotFoundException e) {
-				throw new Exception("Could not locate keyfile at '" + keyPath + "'", e);
+				throw new Exception("Could not locate key file at '" + keyPath + "'", e);
 			}
-			byte[] privKeyBytes = new byte[(int)privKeyFile.length()];
+
+			int keyLen = (int) privKeyFile.length();
+			byte[] privKeyBytes = new byte[keyLen];
+
 			bis.read(privKeyBytes);
 			bis.close();
-			System.out.println("Private key " + Arrays.toString(privKeyBytes));
-			KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+
 			KeySpec ks = new PKCS8EncodedKeySpec(privKeyBytes);
-			PrivateKey privateKey = keyFactory.generatePrivate(ks);
-			signature =Signature.getInstance("SHA1withRSA");
+
+			KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+			privateKey = keyFactory.generatePrivate(ks);
+
+			signature = Signature.getInstance("SHA1withRSA");
 			signature.initSign(privateKey);
-			System.out.println("Completed initalization.....");
+
+			System.out.println("Completed initialization.....");
+
 		} catch (NoSuchAlgorithmException e) {
+			System.out.println("No such Algorithm");
 			e.printStackTrace();
 		} catch (NoSuchPaddingException e) {
+			System.out.println("No such Padding");
 			e.printStackTrace();
 		} catch (Exception e)  {
 			System.out.println("Exception caught");
@@ -85,11 +104,13 @@ public class ServerWithSecurity {
 		}
 	}
 
+	static int count = 0;
+
 	private static class Handler extends Thread {
 		Socket socket;
 		Signature signature;
 		int client;
-		
+
 		PacketObj packet;
 		Object obj;
 		Packet type;
@@ -102,10 +123,21 @@ public class ServerWithSecurity {
 		FileOutputStream fileOutputStream = null;
 		BufferedOutputStream bufferedFileOutputStream = null;
 
-		public Handler(Socket socket, Signature signature, int client) {
+		Handler(Socket socket, Signature signature, int client) {
 			this.socket = socket;
 			this.client = client;
 			this.signature = signature;
+		}
+
+		private static byte[] decrypt(byte[] encryptedtext) {
+			try {
+				Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+				cipher.init(Cipher.DECRYPT_MODE, privateKey);
+				return cipher.doFinal(encryptedtext);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+			return null;
 		}
 
 		public void run() {
@@ -114,7 +146,7 @@ public class ServerWithSecurity {
 				toClient = new ObjectOutputStream(socket.getOutputStream());
 
 				while (!socket.isClosed()) {
-					
+
 					obj = fromClient.readObject();
 					if (obj instanceof PacketObj) {
 						packet = (PacketObj) obj;
@@ -122,76 +154,75 @@ public class ServerWithSecurity {
 					type = packet.getType();
 					length = packet.getLength();
 					message = packet.getMessage();
-					
+
 					switch(type) {
 						case HELLO_SERVER:
-							System.out.println("\nREceived hello message from client");
+							System.out.println("\nReceived hello message from client");
+
 							if(Arrays.equals(message, Strings.HELLO_MESSAGE.getBytes("UTF-8"))) {
 								System.out.println("Sending welcome message signed with private key.......");
+
 								signature.update(Strings.WELCOME_MESSAGE.getBytes("UTF-8"));
+
 								byte[] welcome_message = signature.sign();
 								toClient.writeObject(new PacketObj(Packet.WELCOME,welcome_message.length,welcome_message));
 								toClient.flush();
 							}
+
 							break;
-						
+
 						case REQ_CA_CERT:
 							System.out.println("\nReceived request from client for certificate signed by CA");
 							System.out.println("Responding appropriately.....");
+
 							File cert = new File("server.crt");
+
 							FileInputStream fileInputStream = new FileInputStream(cert);
+
 							BufferedInputStream bis1 = new BufferedInputStream(fileInputStream);
+
 							byte [] fromFileBuffer = new byte[(int) cert.length()];
+
 							bis1.read(fromFileBuffer);
+
 							toClient.writeObject(new PacketObj(Packet.SERVER_CERT, fromFileBuffer.length, fromFileBuffer));
 							toClient.flush();
+
 							System.out.println("Certificate has been sent!!");
+
+							break;
+
+						case FILE_NAME:
+							System.out.println("Receiving file name");
+							System.out.println("Incoming file: "+ new String(packet.getMessage(), 0, packet.getLength()));
+
+							fileOutputStream = new FileOutputStream("../" + new String(message, 0, length));
+							bufferedFileOutputStream = new BufferedOutputStream(fileOutputStream);
+							break;
+
+						case FILE_BLOCK:
+
+							byte[] decryp = decrypt(message);
+							if (decryp != null) {
+								bufferedFileOutputStream.write(decryp, 0, packet.getLength());
+								count++;
+							}
+
+							break;
+
+						case END:
+							System.out.println("Closing socket");
+							bufferedFileOutputStream.flush();
+
+							socket.close();
+							this.interrupt();
 							break;
 					}
-					
-					/*
-					int packetType = fromClient.readInt();
-
-					// If the packet is for transferring the filename
-					if (packetType == 0) {
-
-						System.out.println("Receiving file...");
-
-						int numBytes = fromClient.readInt();
-						byte[] filename = new byte[numBytes];
-						// Must use read fully!
-						// See: https://stackoverflow.com/questions/25897627/datainputstream-read-vs-datainputstream-readfully
-						fromClient.readFully(filename, 0, numBytes);
-
-						fileOutputStream = new FileOutputStream("recv_" + new String(filename, 0, numBytes));
-						bufferedFileOutputStream = new BufferedOutputStream(fileOutputStream);
-
-						// If the packet is for transferring a chunk of the file
-					} else if (packetType == 1) {
-
-						int numBytes = fromClient.readInt();
-						byte[] block = new byte[numBytes];
-						fromClient.readFully(block, 0, numBytes);
-
-						if (numBytes > 0)
-							bufferedFileOutputStream.write(block, 0, numBytes);
-
-						if (numBytes < 117) {
-							System.out.println("Closing connection...");
-
-							if (bufferedFileOutputStream != null) bufferedFileOutputStream.close();
-							if (bufferedFileOutputStream != null) fileOutputStream.close();
-							fromClient.close();
-							toClient.close();
-							socket.close();
-						}
-					}
-					*/
 				}
-			} catch (EOFException e) {
-				System.out.println("unexpected EOF character. Session has ended for client "+client);
-			}catch (Exception e){e.printStackTrace();}
+			} catch ( SignatureException | IOException | ClassNotFoundException e) {
+				e.printStackTrace();
+				System.exit(-1);
+			}
 		}
 	}
-
 }
